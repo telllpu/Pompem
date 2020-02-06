@@ -6,7 +6,7 @@ import datetime
 import re
 from core.request_worker import RequestWorker, RequestWorkerHttpLib
 import json
-
+import requests
 
 class Scraper(Thread):
     def __init__(self):
@@ -124,7 +124,7 @@ class ZeroDay(Scraper):
         self.name_site = "ZeroDay"
         self.name_class = ZeroDay.__name__
         self.key_word = key_word
-        self.url = "http://0day.today/search?search_request={0}"
+        self.url = "https://0day.today/search?search_request={0}"
         self.session_url = "http://0day.today"
         self.base_url = "http://0day.today"
         self.list_result = []
@@ -137,7 +137,7 @@ class ZeroDay(Scraper):
         try:
             url_search = self.url.format(self.key_word)
             req_worker = RequestWorker(url=url_search, data={'agree': 'Yes%2C+I+agree'},
-                                       session_url=self.session_url)
+                                       session_url=url_search)
             req_worker.start()
             self.list_req_workers.append(req_worker)
         except Exception as e:
@@ -185,12 +185,13 @@ class Vulners(Scraper):
 
     def _parser(self, html):
         json_data = json.loads(html)
-        for data in json_data['data']['search']:
-            dict_result = {}
-            dict_result['url'] = data["_source"]['href']
-            dict_result['name'] = data["_source"]["title"]
-            dict_result['date'] = self.regex_date.search(data["_source"]["published"]).group(0)
-            self.list_result.append(dict_result)
+        if 'search' in json_data['data'].keys():
+            for data in json_data['data']['search']:
+                dict_result = {}
+                dict_result['url'] = data["_source"]['href']
+                dict_result['name'] = data["_source"]["title"]
+                dict_result['date'] = self.regex_date.search(data["_source"]["published"]).group(0)
+                self.list_result.append(dict_result)
 
 
 class NationaVulnerabilityDB(Scraper):
@@ -203,10 +204,10 @@ class NationaVulnerabilityDB(Scraper):
         self.base_url = 'https://web.nvd.nist.gov/view/vuln/'
         self.page_max = 60
         self.list_result = []
-        self.regex_item = re.compile(r'(?msi)<dt>.*?a href="detail.*?</dd>')
-        self.regex_name = re.compile(r'(?msi)<dt>.*?Summary:.*?>([^<]*?)<')
-        self.regex_date = re.compile(r'(?msi)<dt>.*?Summary:.*?>.*?Published:.*?>.*?(\d{1,2})\/(\d{1,2})\/(\d{4})')
-        self.regex_url = re.compile(r'(?msi)<dt>.*?href="([^"]*?vulnId.*?)"')
+        self.regex_item = re.compile(r'(?msi)<tr data-testid="vuln-row-\d{1,2}">.+?</tr>')
+        self.regex_name = re.compile(r'(?msi)<p data-testid="vuln-summary-\d{1,2}">(.+?)</p>')
+        self.regex_date = re.compile(r'(?msi)<span data-testid="vuln-published-on-\d{1,2}">(.+?)</span>')
+        self.regex_url = re.compile(r'(?msi)<a href="(.+?)" id')
 
     def run(self, ):
         for page in range(0,self.page_max+1,20):
@@ -222,17 +223,47 @@ class NationaVulnerabilityDB(Scraper):
                 import traceback
                 traceback.print_exc()
         self._get_results()
+        
+    def mandate(self, datestr):
+        date = datestr.split(';')[0]
+        date = date.replace(',','')  
+        ymd = date.split()
+        year = ymd[2]
+        moth = ymd[0]
+        day = ymd[1]
+        if moth == 'January':
+            moth = '1'
+        if moth == 'February':
+            moth = '2'
+        if moth == 'March':
+            moth = '3'
+        if moth == 'April':
+            moth = '4'
+        if moth == 'May':
+            moth = '5'
+        if moth == 'June':
+            moth = '6'
+        if moth == 'July':
+            moth = '7'
+        if moth == 'August':
+            moth = '8'
+        if moth == 'September':
+            moth = '9'
+        if moth == 'October':
+            moth = '10'
+        if moth == 'November':
+            moth = '11'
+        if moth == 'December':
+            moth = '12' 
+        return year + '-' + moth + '-' + day        
 
     def _parser(self, html):
         for item in self.regex_item.finditer(html):
             item_html = item.group(0)
             dict_results = {}
             dict_results['name'] = self.regex_name.search(item_html).group(1)
-            match_date = self.regex_date.search(item_html)
-            date = "{0}-{1}-{2}".format(match_date.group(3),
-                                        match_date.group(1),
-                                        match_date.group(2)
-                                        )
+            match_date = self.regex_date.search(item_html).group(1)
+            date = self.mandate(match_date)
             dict_results['date'] = date
             dict_results['url'] = self.base_url + self.regex_url.search(item_html).group(1)
             self.list_result.append(dict_results)
@@ -276,5 +307,3 @@ class WpvulndbB(Scraper):
             dict_results['name'] = self.regex_name.search(item_html).group(1)
             dict_results['date'] =  self.regex_date.search(item_html).group(1)
             self.list_result.append(dict_results)
-
-
